@@ -25,6 +25,8 @@ const stages = new Set([
   'ready',
 ]);
 const events = new Set([
+  'database_ready',
+  'database_failed',
   'runtime_prepare',
   'runtime_ready',
   'runtime_failed',
