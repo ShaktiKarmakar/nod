@@ -100,6 +100,7 @@ export function createDockerWorkspace(options: {
   workspaceRoot: string;
   spawn?: WorkspaceCommandLauncher;
   ready?(signal?: AbortSignal): Promise<void>;
+  available?(): boolean;
 }): Workspace {
   const command = (threadId: string, args: string[], input: CommandInput) =>
     runWorkspaceCommand({
@@ -122,6 +123,7 @@ export function createDockerWorkspace(options: {
       'Installed: Node, Python (pypdf, pdfplumber, pillow_heif, openpyxl, python-docx, python-pptx), LibreOffice (soffice), ffmpeg, yt-dlp, poppler-utils, qpdf, Ghostscript, Tesseract OCR, git, curl, ripgrep, jq and pipx. Install trusted Python libraries with pip install <package>, trusted CLIs with npm install -g <package> or pipx install <package>; /home/node persists across tasks and restarts. You have no sudo or display, so use a CLI or a web app in the browser, and IPv4 for internet access. Keep outputs in this workspace and never install on the owner\u2019s device.',
     runCommand: run,
     runConnectedCommand: run,
+    available: options.available,
   });
 }
 
@@ -145,6 +147,7 @@ export function createCommandWorkspace(options: {
     args: string[],
     input: CommandInput & { environment: Record<string, string>; cli: ConnectedCli },
   ): Promise<CommandResult>;
+  available?(): boolean;
 }): Workspace {
   let unavailable: string | undefined;
   let disposed = false;
@@ -204,6 +207,7 @@ export function createCommandWorkspace(options: {
   }
   return {
     connectedCliAvailable: Boolean(options.runConnectedCommand),
+    available: options.available,
     dispose: async () => {
       disposed = true;
       lifecycle.abort();
@@ -288,6 +292,7 @@ export function createCommandWorkspace(options: {
       return {
         path: `/workspace/${id}`,
         instructions: options.instructions,
+        available: options.available,
         async exec(script, { input: stdin, signal, timeoutMs = 600_000, onData, notices } = {}) {
           const result = await command(
             id,

@@ -349,7 +349,7 @@ export function modelEnvironment(
 
 export function createDefaultAdapters(
   env: Record<string, string | undefined> = process.env,
-  computer?: { ready(signal?: AbortSignal): Promise<void> },
+  computer?: { ready(signal?: AbortSignal): Promise<void>; available(): boolean },
 ): ApplicationAdapters {
   const bootstrap = modelEnvironment(env);
   const { provider } = bootstrap;
@@ -546,6 +546,7 @@ export function createDefaultAdapters(
       container: env.WORKSPACE_CONTAINER || 'nod-workspace',
       workspaceRoot: join(dataRoot, 'workspaces'),
       ready: computer?.ready,
+      available: computer?.available,
     }),
     localSpeech,
     speechInputFormat: (voice) => {
@@ -2494,6 +2495,7 @@ async function initializeApplication(
       consumers,
       artifacts,
       writeArtifact: workspace.writeArtifact.bind(workspace),
+      workspaceAvailable: () => workspace.available?.() !== false,
       readArtifact: workspace.readArtifact.bind(workspace),
       cardImage: previews?.image ? (url, signal) => previews.image!(url, signal) : undefined,
       mapTile: previews?.mapTile

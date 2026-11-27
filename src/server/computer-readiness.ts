@@ -10,6 +10,7 @@ export function createComputerReadiness() {
       code: error.code,
     });
   return {
+    available: () => Boolean(state && 'ready' in state),
     update(next: ComputerUpdate) {
       state = next;
       for (const waiter of [...waiters]) {

@@ -274,6 +274,7 @@ export interface ThreadDependencies {
     signal?: AbortSignal,
   ) => Promise<void>;
   readArtifact?: (threadId: string, path: string, maxBytes: number) => Promise<Uint8Array>;
+  workspaceAvailable?: () => boolean;
   cardImage?: (url: string, signal: AbortSignal) => Promise<PreviewImage | null>;
   mapTile?: (
     zoom: number,
@@ -2466,15 +2467,18 @@ async function executeTurn(turn: any, dependencies: ThreadDependencies) {
       operation.throwIfAborted();
       const value = await inlineAppResult(
         result,
-        async (text) =>
-          workspaceReference(
+        async (text) => {
+          if (dependencies.workspaceAvailable?.() === false)
+            throw new Error('Nod’s workspace is still starting');
+          return workspaceReference(
             await stage(
               randomUUID(),
               `${action.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80)}.json`,
               Buffer.from(text),
               operation,
             ),
-          ),
+          );
+        },
         dependencies.mailCheck ?? noMailCheck,
         operation,
         nested,

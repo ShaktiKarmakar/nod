@@ -867,6 +867,28 @@ test('small Pi sessions save full output and keep nested results available to sc
   await session.dispose();
 });
 
+test('an oversized result keeps an inline preview while the workspace is still starting', async () => {
+  const { createContextOutput } = await import('../src/providers/pi/context-output.ts');
+  let commands = 0;
+  const output = createContextOutput({
+    path: '/workspace/fixture',
+    instructions: '',
+    available: () => false,
+    exec: async () => {
+      commands++;
+      return { exitCode: 0 };
+    },
+  });
+  const full = `${'synthetic result line\n'.repeat(5000)}synthetic last line`;
+  const saved = JSON.parse(await output.save([{ type: 'text', text: full }], 1000));
+  assert.equal(commands, 0);
+  assert.equal(saved.workspaceFile, undefined);
+  assert.equal(saved.characters, full.length);
+  assert.ok(saved.preview.startsWith('synthetic result line'));
+  assert.ok(saved.tail.endsWith('synthetic last line'));
+  assert.match(saved.message, /still starting/);
+});
+
 test('direct image results save over-budget images in the workspace', async (t) => {
   const { workspace, prefix, root } = await hostSandbox(t);
   const directory = await mkdtemp(join(tmpdir(), 'nod-image-output-'));

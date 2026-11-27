@@ -528,6 +528,7 @@ export function createAgentRuntime(dependencies: {
 
     const spill = async (text: string) => {
       if (text.length <= inlineChars) return text;
+      if (dependencies.workspace.available?.() === false) return text.slice(0, inlineChars);
       const name = `${randomUUID()}-error.txt`;
       try {
         await dependencies.workspace.writeArtifact(threadId, name, Buffer.from(text), signal);
