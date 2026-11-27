@@ -2113,7 +2113,7 @@ describe('account routes', () => {
     const reason = 'The local computer could not start: Docker daemon is not running';
     const failure = new Error(`${reason} (Bearer synthetic-secret-token-0123456789)`);
     const preparing = await fixture(undefined, undefined, undefined, async () => null, undefined, {
-      async prepare() {
+      async start() {
         throw failure;
       },
     });
@@ -2126,20 +2126,18 @@ describe('account routes', () => {
       f.app.inject({ method, url, headers: { origin }, payload });
     const responses = [
       await send(preparing, 'PATCH', '/api/account', { onboardingCompleted: true }),
-      await send(preparing, 'POST', '/api/account/prepare', {}),
       await send(verifying, 'PATCH', '/api/account', { onboardingCompleted: true }),
     ];
     assert.deepEqual(
       responses.map((response) => [response.statusCode, response.json().error]),
       [
         [503, `Setup could not be completed. ${reason} ([redacted])`],
-        [503, `Setup could not be completed. ${reason} ([redacted])`],
         [503, `Could not verify setup. ${reason} ([redacted])`],
       ],
     );
     assert.deepEqual(
       logged.mock.calls.map((call) => JSON.parse(String(call.arguments[0])).event),
-      ['setup_failed', 'setup_failed', 'setup_failed'],
+      ['setup_failed', 'setup_failed'],
     );
     const written = JSON.stringify(logged.mock.calls.map((call) => call.arguments));
     assert.doesNotMatch(written, /synthetic-secret-token|Docker daemon/);
@@ -2627,11 +2625,11 @@ describe('account routes', () => {
     for (const loopback of ['127.0.0.1:4399', '[::1]:4399']) {
       const response = await f.app.inject({
         method: 'POST',
-        url: '/api/account/prepare',
+        url: '/api/account/model-setup',
         headers: { ...access, host: loopback, origin: `http://${loopback}` },
         payload: {},
       });
-      assert.equal(response.statusCode, 200);
+      assert.equal(response.statusCode, 409);
     }
     for (const input of [
       { headers: { ...access, origin: 'https://foreign.example.test' }, payload: {}, status: 403 },
@@ -2644,7 +2642,7 @@ describe('account routes', () => {
     ]) {
       const response = await f.app.inject({
         method: 'POST',
-        url: '/api/account/prepare',
+        url: '/api/account/model-setup',
         headers: input.headers,
         payload: input.payload,
       });
@@ -2677,11 +2675,11 @@ describe('account routes', () => {
     assert.equal(welcome.statusCode, 409);
     const prepared = await f.app.inject({
       method: 'POST',
-      url: '/api/account/prepare',
+      url: '/api/account/model-setup',
       headers: { ...headers, 'x-nod-account': 'local-owner' },
       payload: {},
     });
-    assert.equal(prepared.statusCode, 200);
+    assert.equal(prepared.statusCode, 409);
     assert.equal(f.calls.writes, 0);
     assert.equal(f.calls.started, 0);
   });

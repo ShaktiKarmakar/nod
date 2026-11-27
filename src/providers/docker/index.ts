@@ -99,27 +99,24 @@ export function createDockerWorkspace(options: {
   container: string;
   workspaceRoot: string;
   spawn?: WorkspaceCommandLauncher;
+  ready?(signal?: AbortSignal): Promise<void>;
 }): Workspace {
+  const run = async (threadId: string, args: string[], input: CommandInput) => {
+    await options.ready?.(input.signal);
+    return runWorkspaceCommand({
+      container: options.container,
+      threadId,
+      args,
+      ...input,
+      spawn: options.spawn,
+    });
+  };
   return createCommandWorkspace({
     workspaceRoot: options.workspaceRoot,
     instructions:
       'Installed: Node, Python (pypdf, pdfplumber, pillow_heif, openpyxl, python-docx, python-pptx), LibreOffice (soffice), ffmpeg, yt-dlp, poppler-utils, qpdf, Ghostscript, Tesseract OCR, git, curl, ripgrep, jq and pipx. Install trusted Python libraries with pip install <package>, trusted CLIs with npm install -g <package> or pipx install <package>; /home/node persists across tasks and restarts. You have no sudo or display, so use a CLI or a web app in the browser, and IPv4 for internet access. Keep outputs in this workspace and never install on the owner\u2019s device.',
-    runCommand: (id, args, input) =>
-      runWorkspaceCommand({
-        container: options.container,
-        threadId: id,
-        args,
-        ...input,
-        spawn: options.spawn,
-      }),
-    runConnectedCommand: (id, args, input) =>
-      runWorkspaceCommand({
-        container: options.container,
-        threadId: id,
-        args,
-        ...input,
-        spawn: options.spawn,
-      }),
+    runCommand: run,
+    runConnectedCommand: run,
   });
 }
 

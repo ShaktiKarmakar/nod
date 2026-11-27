@@ -16,6 +16,7 @@ type LocalRuntime = {
   status(): Promise<DesktopStatus>;
   subscribeStatus(listener: (status: DesktopStatus) => void): () => void;
   prepare(options?: { retry: boolean }): Promise<DesktopStatus>;
+  installWsl?(): Promise<DesktopStatus>;
   setup(): Promise<LocalSetup>;
   completePreferences(): Promise<LocalSetup>;
   reconcileSetup(): Promise<void>;
@@ -40,6 +41,7 @@ export type DesktopStatus = {
     error?: string;
     progress?: number;
     secondsLeft?: number;
+    needsWsl?: boolean;
   };
 };
 
@@ -361,15 +363,14 @@ export function restartDesktopUpdate() {
   return restart();
 }
 
-export async function retryDesktopRuntime() {
-  const status = await localRuntime().prepare({ retry: true });
-  const failure =
-    status.error ||
-    (status.phase === 'error' ? status.message : undefined) ||
-    status.runtime?.error ||
-    (status.runtime?.phase === 'error' ? status.runtime.message : undefined);
-  if (failure || status.phase !== 'ready' || status.runtime?.phase !== 'ready')
-    throw new Error(failure || 'Your workspace is not ready yet. Try again.');
+export function retryDesktopComputer() {
+  return localRuntime().prepare({ retry: true });
+}
+
+export function installDesktopWsl() {
+  const install = localRuntime().installWsl;
+  if (!install) return Promise.reject(new Error('Update Nod to install WSL from here.'));
+  return install();
 }
 
 export function desktopFilesAvailable() {

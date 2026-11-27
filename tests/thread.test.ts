@@ -278,9 +278,7 @@ test(
     });
     await thread.initializeThreads();
     await t.test('periodic checks use an installation-spread five-minute schedule', async () => {
-      const { createWorkConsumers } = await import('../src/server/work-admission.ts');
-      const consumers = createWorkConsumers();
-      await consumers.pause();
+      const consumers = { register: async () => {}, close: async () => {} };
       await thread.boss.createQueue('heartbeat', { retryLimit: 0 });
       await thread.boss.schedule('heartbeat', '*/5 * * * *', {}, { tz: 'UTC' });
       try {

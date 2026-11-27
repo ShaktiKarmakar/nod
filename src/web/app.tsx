@@ -18,6 +18,7 @@ import { SetupProgress } from './components/setup-progress';
 import { ServerAccess } from './components/server-access';
 import { Sidebar } from './components/sidebar';
 import { DesktopToolbar } from './components/desktop-toolbar';
+import { ComputerNotice } from './components/computer-notice';
 import { DesktopUpdateToast } from './components/desktop-update-toast';
 import { SidebarToggle } from './components/sidebar-toggle';
 import { FeedbackDialog } from './components/feedback';
@@ -39,6 +40,7 @@ import { resolveBrowserRegion, setDateFormat } from './lib/date-format';
 import { useBrowserTimeZone } from './hooks/use-browser-time-zone';
 import { finishOnboarding } from './lib/onboarding';
 import {
+  desktopRuntimeAvailable,
   desktopSettingsAvailable,
   desktopRendererReady,
   onFeedbackRequested,
@@ -792,7 +794,12 @@ export function App({ sessionState }: { sessionState: ReturnType<typeof useSessi
           onFeedbackHandled={() => setFeedbackRequest(0)}
         />
       )}
-      {desktopSettingsAvailable() && !updating && <DesktopUpdateToast />}
+      {desktopSettingsAvailable() && !updating && (
+        <div className="desktop-toasts">
+          {desktopRuntimeAvailable() && <ComputerNotice />}
+          <DesktopUpdateToast />
+        </div>
+      )}
     </>
   );
 }

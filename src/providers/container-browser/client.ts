@@ -57,6 +57,7 @@ export function createBridgeComputer(options: {
   namespace: string;
   launch(input: BrowserCall): CommandProcess;
   available?(input: BrowserCall): boolean;
+  ready?(signal?: AbortSignal): Promise<void>;
   timeoutMs?: number;
   drainTimeoutMs?: number;
 }): Computer & { quiesce(): Promise<boolean> } {
@@ -124,6 +125,17 @@ export function createBridgeComputer(options: {
   }
 
   function call(
+    input: BrowserCall,
+    signal?: AbortSignal,
+    transfer: { data?: Uint8Array; chunks?: Buffer[] } = {},
+    recovery = false,
+  ): Promise<unknown> {
+    if (!options.ready || input.method === 'dispose')
+      return dispatch(input, signal, transfer, recovery);
+    return options.ready(signal).then(() => dispatch(input, signal, transfer, recovery));
+  }
+
+  function dispatch(
     input: BrowserCall,
     signal?: AbortSignal,
     transfer: { data?: Uint8Array; chunks?: Buffer[] } = {},
@@ -339,6 +351,7 @@ export function createBridgeComputer(options: {
 
   async function* view(id: string, signal: AbortSignal): AsyncGenerator<Buffer> {
     const threadId = threadIdentity(id);
+    await options.ready?.(signal);
     signal.throwIfAborted();
     if (
       disposed ||
