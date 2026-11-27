@@ -426,8 +426,8 @@ const lifecycle = createDesktopLifecycle({
       void writeDiagnostic([runtime.message, runtime.details].filter(Boolean).join('\n')).catch(
         () => {},
       );
-    if (engineReady) update({ runtime });
-    else if (
+    if (
+      !engineReady &&
       preparing &&
       !engineFailure &&
       !welcomeTransferError &&
@@ -443,11 +443,7 @@ const lifecycle = createDesktopLifecycle({
         secondsLeft: value.secondsLeft,
         needsRuntimeArchive: false,
       });
-    else
-      update({
-        runtime,
-        ...(runtime.phase === 'error' ? { error: runtime.message, details: runtime.details } : {}),
-      });
+    else update({ runtime });
   },
   onRuntime: (value) => {
     computerState = value.error
