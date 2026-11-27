@@ -179,6 +179,9 @@ if (process.env.WORKSPACE_CONTAINER) {
   {
     const profile = join(installation, 'synthetic-profile');
     const runtime = await import('../runtime/windows.mjs');
+    const { openDatabase } = await import('../runtime/database.mjs');
+    const { computerNames } = await import('../runtime/index.mjs');
+    const names = computerNames(profile);
     const system = (name) => join(process.env.SYSTEMROOT, 'System32', name);
     console.log('Checking that a WSL failure offers its repair and keeps the Windows error.');
     const automatic = /AUTO_START/.test(await run(system('sc.exe'), ['qc', 'WslService']));
@@ -230,7 +233,18 @@ if (process.env.WORKSPACE_CONTAINER) {
       }),
     );
     let prepared;
+    let database;
+    const computerEnvironment = () => ({
+      ...environment,
+      ...prepared.environment,
+      NOD_DATA_ROOT: profile,
+      WORKSPACE_CONTAINER: names.workspace,
+      BROWSER_CONTAINER: names.browser,
+      DATABASE_URL: database.url,
+    });
     try {
+      database = await openDatabase({ dataRoot: profile, resourcesPath: engine });
+      assert.equal(database.pendingMove, false);
       await run(
         system('WindowsPowerShell/v1.0/powershell.exe'),
         [
@@ -305,17 +319,17 @@ if (process.env.WORKSPACE_CONTAINER) {
           'node',
           '--workdir',
           '/workspace/synthetic-windows-check',
-          prepared.env.WORKSPACE_CONTAINER,
+          names.workspace,
           'bash',
           '-c',
           'test ! -e /var/run/docker.sock && test ! -e /mnt/c && test ! -e /app/.env',
         ],
-        { env: { ...environment, ...prepared.env }, timeout: 120_000 },
+        { env: computerEnvironment(), timeout: 120_000 },
       );
       assert.match(
         await run(application, [smoke], {
           cwd: engine,
-          env: { ...environment, ...prepared.env },
+          env: computerEnvironment(),
           timeout: 300_000,
         }),
         /Windows application and browser verified\./,
@@ -328,7 +342,7 @@ if (process.env.WORKSPACE_CONTAINER) {
       console.log(
         'Checking a relaunch without admin rights after the PC went off and WSL lost the computer.',
       );
-      await run(wsl, ['--terminate', prepared.env.NOD_WSL_DISTRIBUTION]);
+      await run(wsl, ['--terminate', prepared.environment.NOD_WSL_DISTRIBUTION]);
       await run(wsl, ['--shutdown']);
       const disk = join(saved.computerPath, 'ext4.vhdx');
       const kept = join(elsewhere, 'synthetic-kept-ext4.vhdx');
@@ -352,6 +366,8 @@ if (process.env.WORKSPACE_CONTAINER) {
         '-ProcessId',
         String(process.pid),
       ]);
+      await database.close();
+      database = await openDatabase({ dataRoot: profile, resourcesPath: engine });
       prepared = await runtime.prepareWindowsRuntime(
         {
           dataRoot: profile,
@@ -363,7 +379,7 @@ if (process.env.WORKSPACE_CONTAINER) {
       assert.match(
         await run(application, [smoke], {
           cwd: engine,
-          env: { ...environment, ...prepared.env, NOD_WINDOWS_REOPEN: '1' },
+          env: { ...computerEnvironment(), NOD_WINDOWS_REOPEN: '1' },
           timeout: 300_000,
         }),
         /Windows application and browser verified\./,
@@ -377,6 +393,7 @@ if (process.env.WORKSPACE_CONTAINER) {
         '-Command',
         `Remove-Item -LiteralPath '${otherRegistration}' -Recurse -Force -ErrorAction SilentlyContinue`,
       ]);
+      await database?.close();
       console.log('Stopping the test computer.');
       await runtime.stopWindowsRuntime({ dataRoot: profile });
       const saved = await readFile(join(profile, 'desktop-runtime/state.json'), 'utf8')

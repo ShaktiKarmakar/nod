@@ -10,7 +10,6 @@ const parent = (
   process as NodeJS.Process & {
     parentPort?: {
       on(event: 'message', listener: (event: { data: unknown }) => void): void;
-      removeListener(event: 'message', listener: (event: { data: unknown }) => void): void;
     };
   }
 ).parentPort;
@@ -23,9 +22,8 @@ const computerEnvironment = [
   'TEMP',
   'TMP',
 ];
-const computer = desktopMode ? createComputerReadiness() : undefined;
-if (computer) {
-  if (!parent) throw new Error('Desktop startup requires Nod.');
+const computer = desktopMode && parent ? createComputerReadiness() : undefined;
+if (computer && parent) {
   parent.on('message', (event) => {
     const message = event.data as {
       type?: string;
