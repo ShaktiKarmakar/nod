@@ -1,20 +1,21 @@
 import { randomBytes } from 'node:crypto';
-import { access, appendFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  statfs,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { availablePort, execute } from './index.mjs';
 
 const stateVersion = 1;
-
-export function databaseTool(resourcesPath, name) {
-  return join(
-    resolve(resourcesPath),
-    'postgres',
-    'bin',
-    process.platform === 'win32' ? `${name}.exe` : name,
-  );
-}
 
 function toolEnvironment() {
   if (process.platform !== 'win32') return { PATH: '/usr/bin:/bin', HOME: homedir() };
@@ -80,16 +81,102 @@ async function logTail(path) {
   return text.slice(-4000);
 }
 
+const requiredSpace = 256 * 1024 * 1024;
+
+function failure(code, message, cause, details) {
+  return Object.assign(new Error(message, { cause }), {
+    code,
+    details: [cause?.details || cause?.stack || cause?.message, details].filter(Boolean).join('\n'),
+  });
+}
+
+async function checkSpace(path) {
+  const { bavail, bsize } = await statfs(path).catch(() => ({ bavail: Infinity, bsize: 1 }));
+  if (bavail * bsize < requiredSpace)
+    throw failure(
+      'NOD_DATABASE_STORAGE_FULL',
+      `Nod needs about ${Math.round(requiredSpace / 1024 / 1024)} MB of free disk space for its database. Free some space, then try again.`,
+    );
+}
+
+async function nativePath(path) {
+  if (process.platform !== 'win32' || /^[\x20-\x7e]*$/.test(path)) return path;
+  const env = toolEnvironment();
+  const short = await execute(
+    join(env.SYSTEMROOT || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      '& { param($path) (New-Object -ComObject Scripting.FileSystemObject).GetFolder($path).ShortPath }',
+      path,
+    ],
+    { env, timeout: 60_000 },
+  ).catch(() => '');
+  return /^[\x20-\x7e]+$/.test(short) ? short : path;
+}
+
+async function connect(port, password, database) {
+  const { default: pg } = await import('pg');
+  const client = new pg.Client({
+    host: '127.0.0.1',
+    port,
+    user: 'nod',
+    password,
+    database,
+    connectionTimeoutMillis: 10_000,
+  });
+  try {
+    await client.connect();
+  } catch (error) {
+    await client.end().catch(() => {});
+    throw error;
+  }
+  return client;
+}
+
+async function stopLeftover({ data, password, pgCtl, env, signal }) {
+  const lock = await readFile(join(data, 'postmaster.pid'), 'utf8').catch(() => undefined);
+  if (lock === undefined) return;
+  const port = Number(lock.split('\n')[3]);
+  const client = Number.isSafeInteger(port)
+    ? await connect(port, password, 'postgres').catch(() => undefined)
+    : undefined;
+  if (client) {
+    const directory = await client
+      .query("SELECT current_setting('data_directory') AS value")
+      .then(
+        (result) => result.rows[0].value,
+        () => undefined,
+      )
+      .finally(() => client.end().catch(() => {}));
+    if (directory && resolve(directory).toLowerCase() === resolve(data).toLowerCase()) {
+      await execute(
+        pgCtl,
+        ['stop', '--pgdata', data, '--mode', 'fast', '--wait', '--timeout', '60'],
+        {
+          env,
+          signal,
+          timeout: 90_000,
+        },
+      );
+      return;
+    }
+  }
+  await rm(join(data, 'postmaster.pid'), { force: true });
+}
+
 export async function openDatabase({ dataRoot, resourcesPath, signal }) {
   const root = join(resolve(dataRoot), 'database');
-  const data = join(root, 'data');
-  const log = join(root, 'postgres.log');
   const statePath = join(root, 'state.json');
   const env = toolEnvironment();
-  const pgCtl = databaseTool(resourcesPath, 'pg_ctl');
   await mkdir(root, { recursive: true, mode: 0o700 });
+  for (const entry of await readdir(root))
+    if (/\.[a-f0-9]{12}\.(?:tmp|password)$/.test(entry))
+      await rm(join(root, entry), { recursive: true, force: true });
   let state = await readState(statePath);
   if (!state) {
+    await checkSpace(root);
     state = {
       version: stateVersion,
       password: randomBytes(32).toString('hex'),
@@ -97,13 +184,21 @@ export async function openDatabase({ dataRoot, resourcesPath, signal }) {
     };
     await writeState(statePath, state);
   }
+  const nativeRoot = await nativePath(root);
+  const data = join(nativeRoot, 'data');
+  const log = join(nativeRoot, 'postgres.log');
+  const tools = await nativePath(join(resolve(resourcesPath), 'postgres', 'bin'));
+  const tool = (name) => join(tools, process.platform === 'win32' ? `${name}.exe` : name);
+  const pgCtl = tool('pg_ctl');
   if (!(await exists(join(data, 'PG_VERSION')))) {
-    const temporary = `${data}.${randomBytes(6).toString('hex')}.tmp`;
-    const passwordFile = `${statePath}.${randomBytes(6).toString('hex')}.password`;
+    await checkSpace(root);
+    const suffix = randomBytes(6).toString('hex');
+    const temporary = join(nativeRoot, `data.${suffix}.tmp`);
+    const passwordFile = join(nativeRoot, `state.${suffix}.password`);
     await writeFile(passwordFile, `${state.password}\n`, { mode: 0o600, flag: 'wx' });
     try {
       await execute(
-        databaseTool(resourcesPath, 'initdb'),
+        tool('initdb'),
         [
           '--pgdata',
           temporary,
@@ -122,7 +217,7 @@ export async function openDatabase({ dataRoot, resourcesPath, signal }) {
           'C.UTF-8',
           '--no-instructions',
         ],
-        { env, signal, timeout: 300_000 },
+        { env, signal, timeout: 600_000 },
       );
       await appendFile(
         join(temporary, 'postgresql.conf'),
@@ -133,76 +228,72 @@ export async function openDatabase({ dataRoot, resourcesPath, signal }) {
     } catch (cause) {
       await rm(temporary, { recursive: true, force: true }).catch(() => {});
       signal?.throwIfAborted();
-      throw Object.assign(new Error('Nod could not create its database.', { cause }), {
-        code: 'NOD_DATABASE_SETUP_FAILED',
-        details: cause.details,
-      });
+      await checkSpace(root);
+      throw failure('NOD_DATABASE_SETUP_FAILED', 'Nod could not create its database.', cause);
     } finally {
       await rm(passwordFile, { force: true });
     }
   }
-  if (await exists(join(data, 'postmaster.pid')))
-    await execute(
-      pgCtl,
-      ['stop', '--pgdata', data, '--mode', 'fast', '--wait', '--timeout', '60'],
-      {
-        env,
-        signal,
-        timeout: 90_000,
-      },
-    ).catch(() => {});
-  const port = await availablePort();
-  await rm(log, { force: true });
-  try {
-    await execute(
-      pgCtl,
-      [
-        'start',
-        '--pgdata',
-        data,
-        '--log',
-        log,
-        '--wait',
-        '--timeout',
-        '120',
-        '--options',
-        `-p ${port}`,
-      ],
-      { env, signal, timeout: 150_000 },
-    );
-  } catch (cause) {
-    signal?.throwIfAborted();
-    throw Object.assign(new Error('Nod could not start its database.', { cause }), {
-      code: 'NOD_DATABASE_START_FAILED',
-      details: [cause.details, await logTail(log)].filter(Boolean).join('\n'),
-    });
+  await stopLeftover({ data, password: state.password, pgCtl, env, signal }).catch(() => {});
+  let port;
+  for (let attempt = 1; ; attempt++) {
+    port = await availablePort();
+    await rm(log, { force: true });
+    try {
+      await execute(
+        pgCtl,
+        [
+          'start',
+          '--pgdata',
+          data,
+          '--log',
+          log,
+          '--wait',
+          '--timeout',
+          '300',
+          '--options',
+          `-p ${port}`,
+        ],
+        { env, signal, timeout: 330_000 },
+      );
+      break;
+    } catch (cause) {
+      signal?.throwIfAborted();
+      const details = await logTail(log);
+      if (attempt < 3) {
+        await stopLeftover({ data, password: state.password, pgCtl, env, signal }).catch(() => {});
+        continue;
+      }
+      await checkSpace(root);
+      throw failure(
+        'NOD_DATABASE_START_FAILED',
+        'Nod could not start its database.',
+        cause,
+        details,
+      );
+    }
   }
   const close = () =>
     execute(pgCtl, ['stop', '--pgdata', data, '--mode', 'fast', '--wait', '--timeout', '60'], {
       env,
       timeout: 90_000,
     });
-  const { default: pg } = await import('pg');
-  const client = new pg.Client({
-    host: '127.0.0.1',
-    port,
-    user: 'nod',
-    password: state.password,
-    database: 'postgres',
-    connectionTimeoutMillis: 10_000,
-  });
   try {
-    await client.connect();
-    if (!(await client.query("SELECT 1 FROM pg_database WHERE datname='nod'")).rowCount)
-      await client.query('CREATE DATABASE nod');
+    const client = await connect(port, state.password, 'postgres');
+    try {
+      if (!(await client.query("SELECT 1 FROM pg_database WHERE datname='nod'")).rowCount)
+        await client.query('CREATE DATABASE nod');
+    } finally {
+      await client.end().catch(() => {});
+    }
   } catch (cause) {
     await close().catch(() => {});
-    throw Object.assign(new Error('Nod could not open its database.', { cause }), {
-      code: 'NOD_DATABASE_CONNECTION_FAILED',
-      details: [cause.stack || cause.message, await logTail(log)].filter(Boolean).join('\n'),
-    });
-  } finally {
-    await client.end().catch(() => {});
+    throw failure(
+      'NOD_DATABASE_CONNECTION_FAILED',
+      'Nod could not open its database.',
+      cause,
+      await logTail(log),
+    );
   }
   return {
     url: `postgresql://nod:${state.password}@127.0.0.1:${port}/nod`,
