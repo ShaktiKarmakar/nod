@@ -3188,7 +3188,8 @@ async function prepare(options = {}) {
       needsRuntimeArchive: false,
       needsStorage: false,
     });
-    return lifecycle.start({ retry: options?.retry === true });
+    await lifecycle.start({ retry: options?.retry === true });
+    return status;
   })()
     .catch((error) => {
       void writeDiagnostic(

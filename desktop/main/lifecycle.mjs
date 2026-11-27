@@ -226,12 +226,12 @@ export function createDesktopLifecycle({
         try {
           if (runtime) await runtime.close?.();
           else if (cleanupRequired) await stopRuntime?.();
+          runtime = undefined;
+          cleanupRequired = false;
         } finally {
           await opened?.close();
-          runtime = undefined;
           opened = undefined;
           database = undefined;
-          cleanupRequired = false;
         }
       }
     })().catch((error) => {
