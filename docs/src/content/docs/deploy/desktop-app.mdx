@@ -318,6 +318,8 @@ The packaged engine includes only the packages in `dependencies` and what they d
 | Replay onboarding                   | `pnpm --dir desktop start --onboarding`                                                  |
 | Use a fresh, throwaway profile      | `NOD_DESKTOP_USER_DATA=/tmp/nod-onboarding-review pnpm --dir desktop start --onboarding` |
 
+The first unpackaged start downloads the PostgreSQL build for your computer into `postgres/` at the repository root, checks its SHA-256 and reuses it afterwards. Packaged builds include it.
+
 `NOD_DESKTOP_USER_DATA` works in development and in the deliberately marked [isolated test build](/contribute/desktop-releases/#test-a-local-mac-build). Normal packaged apps always use their own profile.
 
 To test a local connection service, run the unpackaged app with a new, absolute profile path and a proxy origin:
