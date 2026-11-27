@@ -805,6 +805,18 @@ async function moveComputerDatabase({
         ]),
       { signal },
     );
+    const { default: pg } = await import('pg');
+    await waitFor(
+      async () => {
+        const client = new pg.Client({ connectionString: source, connectionTimeoutMillis: 5000 });
+        try {
+          await client.connect();
+        } finally {
+          await client.end().catch(() => {});
+        }
+      },
+      { signal, attempts: 30, interval: 1000 },
+    );
     status('starting', 'Moving your saved data to this computer…', 'storage');
     await moveDatabase({
       source,
