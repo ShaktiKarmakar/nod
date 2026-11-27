@@ -3469,7 +3469,7 @@ test('task handoff shows only the start message unless a steered request needs a
 test('a paused turn cannot start a subagent still preparing and failed children return errors', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'nod-delegate-stop-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  let opened = 0;
+  let started = 0;
   let preparing = 0;
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -3479,13 +3479,14 @@ test('a paused turn cannot start a subagent still preparing and failed children 
     agent: {
       open: async (input) => {
         const child = Boolean(input.ephemeral);
-        if (child) opened++;
+        if (child && ++preparing === 3) await gate;
         return {
           resumed: false,
           abort: () => release(),
           dispose() {},
           prompt: async () => {
             if (child) {
+              started++;
               await gate;
               input.onEvent({ type: 'error', message: '402 Insufficient credits' });
               input.onEvent({ type: 'message_end', status: 'failed' });
@@ -3501,7 +3502,7 @@ test('a paused turn cannot start a subagent still preparing and failed children 
               .find((tool) => tool.name === 'ask_user')!
               .execute({ question: 'Which source should I use?' });
             const outcomes = await Promise.allSettled(pending);
-            assert.equal(opened, 2);
+            assert.equal(started, 2);
             assert.ok(outcomes.every((outcome) => outcome.status === 'rejected'));
             assert.ok(
               outcomes
@@ -3524,10 +3525,7 @@ test('a paused turn cannot start a subagent still preparing and failed children 
       open: () => ({
         path: '/fixture/workspace',
         instructions: 'Fixture workspace only.',
-        exec: async () => {
-          if (++preparing === 3) await gate;
-          return { exitCode: 0 };
-        },
+        exec: async () => ({ exitCode: 0 }),
       }),
     }),
   });
