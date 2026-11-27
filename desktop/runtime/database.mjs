@@ -236,26 +236,40 @@ export async function openDatabase({ dataRoot, resourcesPath, signal }) {
   }
   await stopLeftover({ data, password: state.password, pgCtl, env, signal }).catch(() => {});
   let port;
+  const start = (abort) =>
+    execute(
+      pgCtl,
+      [
+        'start',
+        '--pgdata',
+        data,
+        '--log',
+        log,
+        '--wait',
+        '--timeout',
+        '300',
+        '--options',
+        `-p ${port}`,
+      ],
+      { env, signal: abort, timeout: 330_000 },
+    );
+  const running = async () => {
+    const pid = Number(
+      (await readFile(join(data, 'postmaster.pid'), 'utf8').catch(() => '')).split('\n')[0],
+    );
+    if (!Number.isSafeInteger(pid) || pid < 1) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return error.code === 'EPERM';
+    }
+  };
   for (let attempt = 1; ; attempt++) {
     port = await availablePort();
     await rm(log, { force: true });
     try {
-      await execute(
-        pgCtl,
-        [
-          'start',
-          '--pgdata',
-          data,
-          '--log',
-          log,
-          '--wait',
-          '--timeout',
-          '300',
-          '--options',
-          `-p ${port}`,
-        ],
-        { env, signal, timeout: 330_000 },
-      );
+      await start(signal);
       break;
     } catch (cause) {
       signal?.throwIfAborted();
@@ -273,11 +287,31 @@ export async function openDatabase({ dataRoot, resourcesPath, signal }) {
       );
     }
   }
-  const close = () =>
-    execute(pgCtl, ['stop', '--pgdata', data, '--mode', 'fast', '--wait', '--timeout', '60'], {
-      env,
-      timeout: 90_000,
-    });
+  let closing = false;
+  let restarting;
+  const watchdog = setInterval(() => {
+    restarting ??= running()
+      .then((up) => (up || closing ? undefined : start()))
+      .catch(() => {})
+      .finally(() => {
+        restarting = undefined;
+      });
+  }, 5000);
+  watchdog.unref?.();
+  const close = async () => {
+    closing = true;
+    clearInterval(watchdog);
+    await restarting;
+    try {
+      await execute(
+        pgCtl,
+        ['stop', '--pgdata', data, '--mode', 'fast', '--wait', '--timeout', '60'],
+        { env, timeout: 90_000 },
+      );
+    } catch (error) {
+      if (await running()) throw error;
+    }
+  };
   try {
     const client = await connect(port, state.password, 'postgres');
     try {
