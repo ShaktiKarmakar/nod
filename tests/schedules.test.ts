@@ -26,6 +26,18 @@ import {
   type ScheduleFrequency,
 } from '../src/web/lib/schedules.ts';
 
+test('hourly schedules reject an empty or out-of-range time', () => {
+  for (const time of ['', '10:60', '10:99', '24:00', '25:30']) {
+    assert.throws(() => scheduleExpression({ frequency: 'hours', time, day: '1', interval: '3' }), {
+      message: 'Choose a valid time.',
+    });
+  }
+  assert.equal(
+    scheduleExpression({ frequency: 'hours', time: '10:30', day: '1', interval: '3' }),
+    '30 */3 * * *',
+  );
+});
+
 test(
   'one-off and recurring schedules dispatch atomically with exact timing and retained owned history',
   { skip: !process.env.TEST_DATABASE_URL, timeout: 30_000 },
