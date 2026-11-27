@@ -11,6 +11,13 @@ export {
   type ScheduleTiming,
 } from '../../shared/schedule-timing';
 
+function clockTime(time: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59)
+    throw new Error('Choose a valid time.');
+  return { hour: Number(match[1]), minute: Number(match[2]) };
+}
+
 export function scheduleExpression({
   frequency,
   time,
@@ -31,12 +38,9 @@ export function scheduleExpression({
       throw new Error('Choose how often this schedule repeats.');
     const step = every === 1 ? '*' : `*/${every}`;
     if (frequency === 'minutes') return `${step} * * * *`;
-    const minute = Number(/^\d{2}:(\d{2})$/.exec(time)?.[1] ?? 0);
-    return `${minute > 59 ? 0 : minute} ${step} * * *`;
+    return `${clockTime(time).minute} ${step} * * *`;
   }
-  const match = /^(\d{2}):(\d{2})$/.exec(time);
-  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59)
-    throw new Error('Choose a valid time.');
+  const { hour, minute } = clockTime(time);
   if (frequency === 'weekly' && !/^[0-6]$/.test(day)) throw new Error('Choose a day of the week.');
   if (frequency === 'monthly' && !/^([1-9]|[12]\d|3[01])$/.test(day))
     throw new Error('Choose a day of the month.');
@@ -48,7 +52,7 @@ export function scheduleExpression({
         : frequency === 'weekends'
           ? '0,6'
           : '*';
-  return `${Number(match[2])} ${Number(match[1])} ${frequency === 'monthly' ? day : '*'} * ${weekday}`;
+  return `${minute} ${hour} ${frequency === 'monthly' ? day : '*'} * ${weekday}`;
 }
 
 export function scheduleLabel(cron: string, format?: DateFormat) {
