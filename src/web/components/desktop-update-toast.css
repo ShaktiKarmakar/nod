@@ -1,8 +1,8 @@
 .desktop-toasts {
   position: fixed;
   z-index: 40;
+  top: calc(var(--page-top) + var(--shell-heading-height) + 16px);
   right: 24px;
-  bottom: 24px;
   display: grid;
   gap: 12px;
   justify-items: end;
@@ -62,12 +62,8 @@
   gap: 8px;
   margin-top: 12px;
 }
-body:has(.feedback-toast) .desktop-toasts {
-  bottom: 92px;
-}
 @media (max-width: 480px) {
   .desktop-toasts {
     right: 16px;
-    bottom: 16px;
   }
 }
