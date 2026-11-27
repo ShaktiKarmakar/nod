@@ -1,16 +1,31 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import pg from 'pg';
 
-const { moveDatabase } = (await import('../desktop/runtime/database.mjs' as string)) as {
+type HostDatabase = { url: string; pendingMove: boolean; close(): Promise<void> };
+const { moveDatabase, openDatabase } = (await import(
+  '../desktop/runtime/database.mjs' as string
+)) as {
   moveDatabase(options: {
     source: string;
     target: string;
     schema(section: string): Promise<string>;
     signal?: AbortSignal;
   }): Promise<void>;
+  openDatabase(options: { dataRoot: string; resourcesPath: string }): Promise<HostDatabase>;
 };
+const binaries = join(
+  process.cwd(),
+  'postgres',
+  'bin',
+  process.platform === 'win32' ? 'postgres.exe' : 'postgres',
+);
 
 const url = process.env.TEST_DATABASE_URL;
 
@@ -123,5 +138,43 @@ test(
       ).rows,
       [],
     );
+  },
+);
+
+test(
+  'the host database restarts after a crash, quits cleanly and keeps its data',
+  { skip: !existsSync(binaries) },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'nod-host-database-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const postmaster = () =>
+      Number(readFileSync(join(root, 'database', 'data', 'postmaster.pid'), 'utf8').split('\n')[0]);
+    const database = await openDatabase({ dataRoot: root, resourcesPath: process.cwd() });
+    assert.equal(database.pendingMove, false);
+    const pool = new pg.Pool({ connectionString: database.url, max: 2 });
+    pool.on('error', () => {});
+    await pool.query('CREATE TABLE synthetic (value text)');
+    await pool.query("INSERT INTO synthetic VALUES ('kept')");
+    const crashed = postmaster();
+    process.kill(crashed, 'SIGKILL');
+    let value: string | undefined;
+    for (let attempt = 0; attempt < 60 && !value; attempt++) {
+      await delay(500);
+      value = await pool.query('SELECT value FROM synthetic').then(
+        (result) => result.rows[0].value,
+        () => undefined,
+      );
+    }
+    assert.equal(value, 'kept');
+    assert.notEqual(postmaster(), crashed);
+    await pool.end();
+    process.kill(postmaster(), 'SIGKILL');
+    await database.close();
+    const reopened = await openDatabase({ dataRoot: root, resourcesPath: process.cwd() });
+    const client = new pg.Client({ connectionString: reopened.url });
+    await client.connect();
+    assert.equal((await client.query('SELECT value FROM synthetic')).rows[0].value, 'kept');
+    await client.end();
+    await reopened.close();
   },
 );

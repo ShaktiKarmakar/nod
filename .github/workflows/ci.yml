@@ -128,6 +128,9 @@ jobs:
           fi
           sudo ln -s "$PWD" /app
           mkdir -p "$RUNNER_TEMP/integration-timings"
+      - name: Fetch the pinned PostgreSQL build for host database tests
+        if: steps.scope.outputs.integration == 'true'
+        run: node desktop/scripts/postgres-binaries.mjs
       - name: Install desktop tooling without downloading Electron
         if: steps.scope.outputs.desktop == 'true'
         env:
