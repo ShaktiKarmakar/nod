@@ -67,6 +67,7 @@
     "pdfjs-dist": "6.4.299",
     "pg": "^8.23.1",
     "pg-boss": "12.38.2",
+    "pg-copy-streams": "7.0.0",
     "pi-web-access": "0.41.0",
     "posthog-node": "5.71.0",
     "react": "^19.3.1",
