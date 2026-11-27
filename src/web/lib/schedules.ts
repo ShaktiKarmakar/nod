@@ -1,24 +1,38 @@
 import { formatClockTime, formatDateTime, type DateFormat } from './date-format';
 import {
   scheduleLabel as sharedScheduleLabel,
-  type ScheduleFrequency,
+  type ScheduleTiming,
 } from '../../shared/schedule-timing';
 
 export {
   readSchedule,
   scheduleWeekDays,
   type ScheduleFrequency,
+  type ScheduleTiming,
 } from '../../shared/schedule-timing';
 
-export function scheduleExpression(
-  frequency: ScheduleFrequency,
-  time: string,
-  day: string,
-  original?: string,
-) {
+export function scheduleExpression({
+  frequency,
+  time,
+  day,
+  interval,
+  cron,
+}: Omit<ScheduleTiming, 'cron'> & { cron?: string }) {
   if (frequency === 'custom') {
-    if (original) return original;
-    throw new Error('Choose how often this schedule repeats.');
+    const expression = (cron ?? '').trim().split(/\s+/).filter(Boolean);
+    if (expression.length !== 5)
+      throw new Error('Enter five cron fields: minute, hour, day of month, month and day of week.');
+    return expression.join(' ');
+  }
+  if (frequency === 'minutes' || frequency === 'hours') {
+    const every = Number(interval);
+    const limit = frequency === 'minutes' ? 60 : 24;
+    if (!Number.isInteger(every) || every < 1 || every >= limit || limit % every !== 0)
+      throw new Error('Choose how often this schedule repeats.');
+    const step = every === 1 ? '*' : `*/${every}`;
+    if (frequency === 'minutes') return `${step} * * * *`;
+    const minute = Number(/^\d{2}:(\d{2})$/.exec(time)?.[1] ?? 0);
+    return `${minute > 59 ? 0 : minute} ${step} * * *`;
   }
   const match = /^(\d{2}):(\d{2})$/.exec(time);
   if (!match || Number(match[1]) > 23 || Number(match[2]) > 59)
