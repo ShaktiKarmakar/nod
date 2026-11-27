@@ -885,16 +885,18 @@ test(
             ).statusCode,
             409,
           );
-          for (const [frequency, day, expected] of [
+          for (const [frequency, day, expected, interval = '1'] of [
+            ['minutes', '1', '2035-10-26T12:15:00.000Z', '15'],
+            ['hours', '1', '2035-10-26T14:30:00.000Z', '3'],
             ['daily', '1', '2035-10-27T09:30:00.000Z'],
             ['weekdays', '1', '2035-10-29T10:30:00.000Z'],
             ['weekends', '1', '2035-10-27T09:30:00.000Z'],
             ['weekly', '0', '2035-10-28T10:30:00.000Z'],
             ['monthly', '31', '2035-10-31T10:30:00.000Z'],
-          ] as Array<[ScheduleFrequency, string, string]>) {
+          ] as Array<[ScheduleFrequency, string, string, string?]>) {
             const schedule = await create({ cron: '0 9 * * *' });
             const response = await request('PATCH', `/api/schedules/${schedule.id}`, {
-              cron: scheduleExpression(frequency, '10:30', day),
+              cron: scheduleExpression({ frequency, time: '10:30', day, interval }),
               timeZone: 'Europe/Lisbon',
             });
             assert.equal(response.statusCode, 200, response.body);
@@ -910,11 +912,20 @@ test(
               );
             await request('DELETE', `/api/schedules/${schedule.id}`);
           }
-          const customCron = '15 8 1,15 * 1-5';
-          const custom = await create({ cron: customCron });
+          const custom = await create({ cron: '*/30 * * * *' });
           const draft = readSchedule(custom.cron!);
+          assert.deepEqual([draft.frequency, draft.interval], ['minutes', '30']);
+          assert.equal(
+            (
+              await request('PATCH', `/api/schedules/${custom.id}`, {
+                cron: scheduleExpression({ ...draft, frequency: 'custom', cron: '61 * * * *' }),
+              })
+            ).statusCode,
+            400,
+          );
+          const customCron = '15 8 1,15 * 1-5';
           const response = await request('PATCH', `/api/schedules/${custom.id}`, {
-            cron: scheduleExpression(draft.frequency, draft.time, draft.day, custom.cron!),
+            cron: scheduleExpression({ ...draft, frequency: 'custom', cron: ` ${customCron} ` }),
             timeZone: 'America/New_York',
           });
           assert.equal(response.statusCode, 200, response.body);
