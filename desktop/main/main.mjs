@@ -469,6 +469,7 @@ let wslInstalled = false;
 
 async function installWslOnce() {
   if (process.platform !== 'win32' || remoteConnection || quitting) return;
+  if (!welcomePassed && !onboardingCompleted) return;
   if (wslInstalled) {
     update({
       runtime: {
@@ -2115,6 +2116,7 @@ async function transferWelcome() {
     welcomeNavigation = true;
     welcomePassed = true;
     welcomeTransferError = undefined;
+    if (computerState?.error?.code === 'NOD_WSL_REQUIRED') void installWslOnce();
     update({
       phase: engineReady ? 'ready' : 'preparing',
       message: engineReady ? 'Nod is running on your computer.' : status.runtime.message,

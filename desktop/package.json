@@ -9,6 +9,7 @@
   "description": "Nod, the open source personal agent from n8n",
   "scripts": {
     "postinstall": "node scripts/patch-osx-sign.mjs",
+    "prestart": "node scripts/postgres-binaries.mjs",
     "start": "electron .",
     "build": "node scripts/build-app.mjs",
     "test": "node --test test/*.test.mjs"

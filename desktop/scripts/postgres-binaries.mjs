@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   cp,
+  stat,
   mkdir,
   mkdtemp,
   readdir,
@@ -12,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 import { run } from './release-tools.mjs';
 
@@ -148,4 +149,15 @@ export async function copyPostgres({
     await rm(work, { recursive: true, force: true });
   }
   return output;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const binary = join(
+    root,
+    'postgres',
+    'bin',
+    process.platform === 'win32' ? 'postgres.exe' : 'postgres',
+  );
+  if (!(await stat(binary).catch(() => undefined))) await copyPostgres({ target: root });
 }
