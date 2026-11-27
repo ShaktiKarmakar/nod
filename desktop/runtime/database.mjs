@@ -321,6 +321,10 @@ export async function moveDatabase({ source, target, schema, signal }) {
   try {
     await host.connect();
     try {
+      const copied = await host.query(
+        "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')) AS value",
+      );
+      if (copied.rows[0].value) return;
       await legacy.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await host.query('BEGIN');
       try {

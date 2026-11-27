@@ -105,8 +105,12 @@ test(
       /queue_thread/,
     );
 
+    const current = (await moved.query(snapshot)).rows[0];
+    await moveDatabase({ source: databaseUrl(source), target: databaseUrl(target), schema });
+    assert.deepEqual((await moved.query(snapshot)).rows[0], current);
+
     const occupied = await open(busy);
-    await occupied.query('CREATE TABLE public.threads (id bigint)');
+    await occupied.query('CREATE SCHEMA jobs');
     await assert.rejects(
       moveDatabase({ source: databaseUrl(source), target: databaseUrl(busy), schema }),
       /already exists/,
@@ -114,7 +118,7 @@ test(
     assert.deepEqual(
       (
         await occupied.query(
-          "SELECT nspname FROM pg_namespace WHERE nspname = 'jobs' UNION ALL SELECT relname FROM pg_class WHERE relname = 'queue'",
+          "SELECT tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
         )
       ).rows,
       [],
