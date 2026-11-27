@@ -101,16 +101,21 @@ export function createDockerWorkspace(options: {
   spawn?: WorkspaceCommandLauncher;
   ready?(signal?: AbortSignal): Promise<void>;
 }): Workspace {
-  const run = async (threadId: string, args: string[], input: CommandInput) => {
-    await options.ready?.(input.signal);
-    return runWorkspaceCommand({
+  const command = (threadId: string, args: string[], input: CommandInput) =>
+    runWorkspaceCommand({
       container: options.container,
       threadId,
       args,
       ...input,
       spawn: options.spawn,
     });
-  };
+  const ready = options.ready;
+  const run = ready
+    ? async (threadId: string, args: string[], input: CommandInput) => {
+        await ready(input.signal);
+        return command(threadId, args, input);
+      }
+    : command;
   return createCommandWorkspace({
     workspaceRoot: options.workspaceRoot,
     instructions:
